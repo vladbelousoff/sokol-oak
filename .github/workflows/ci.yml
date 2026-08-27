@@ -1,0 +1,124 @@
+# Builds the native plugin on every platform the package ships a binary for.
+#
+# Oak is built from source first: the plugin compiles against its public
+# headers and links acorn, and there is no released package to install.
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: macos-aarch64
+            os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install meson and ninja
+        run: pip install meson ninja
+
+      # sokol_app's X11 backend, plus the GL and ALSA headers it links
+      # against even when sokol_audio is not compiled in.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev \
+            libxrandr-dev libasound2-dev
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Build and install Oak
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/vladbelousoff/oak.git "$RUNNER_TEMP/oak"
+          cd "$RUNNER_TEMP/oak"
+          meson setup build --buildtype=release --prefix="$RUNNER_TEMP/oak-prefix"
+          meson compile -C build
+          meson install -C build
+
+      - name: Build the plugin
+        shell: bash
+        run: |
+          meson setup build \
+            --buildtype=release --strip \
+            -Dpkg_config_path="$RUNNER_TEMP/oak-prefix/lib/pkgconfig:$RUNNER_TEMP/oak-prefix/lib/x86_64-linux-gnu/pkgconfig"
+          meson compile -C build
+          meson install -C build
+
+      # The real check: Oak loads the library, matches every bodyless
+      # declaration in src/*.oak to a binding, and reports a stub that has
+      # drifted from the implementation.
+      - name: Verify stubs against bindings
+        shell: bash
+        run: |
+          export PATH="$RUNNER_TEMP/oak-prefix/bin:$PATH"
+          cd examples
+          oak verify.oak
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: native/${{ matrix.name }}/
+          if-no-files-found: error
+
+  # The repository stores no binaries, so a release is how the package
+  # actually reaches anyone: one archive carrying the .oak sources and every
+  # platform's library, which is the archive dependency form Oak already
+  # supports. The digest is printed because a consumer pins it.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: native
+
+      - name: Assemble the package archive
+        id: pack
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          pkg="sokol-oak-$version"
+          mkdir "$pkg"
+          # Only what a consumer needs: the manifest, the stubs, the
+          # libraries, and the licence they are all covered by.
+          cp -r oak.json README.md LICENSE src native "$pkg/"
+          tar czf "$pkg.tar.gz" "$pkg"
+          echo "archive=$pkg.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "### \`$pkg.tar.gz\`" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          sha256sum "$pkg.tar.gz" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach it to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pack.outputs.archive }}
+          fail_on_unmatched_files: true

@@ -1,0 +1,41 @@
+/* The smallest complete sokol-oak program: open a window and clear it to a
+ * colour that drifts over time.
+ *
+ *   oak examples/clear.oak
+ *
+ * Note how the drifting value lives in `d.numbers`. A callback in Oak sees
+ * only its arguments -- there are no closures and no globals -- so state that
+ * has to survive from one frame to the next travels in the Desc.
+ */
+import { Desc, desc, run } from sokol;
+import sokol.gfx as gfx;
+
+fn init(mut d : Desc) {
+  gfx.setup(gfx.desc());
+  d.numbers = [ 0.0 ];
+}
+
+fn frame(mut d : Desc) {
+  let green = d.numbers[0] + 0.01;
+  if green > 1.0 {
+    green = 0.0;
+  }
+  d.numbers[0] = green;
+
+  gfx.begin_pass(gfx.clear_action(gfx.color(0.2, green, 0.4, 1.0)));
+  gfx.end_pass();
+  gfx.commit();
+}
+
+fn cleanup(mut d : Desc) {
+  gfx.shutdown();
+}
+
+let d = desc();
+d.title = 'sokol-oak: clear';
+d.width = 640;
+d.height = 480;
+d.init = init;
+d.frame = frame;
+d.cleanup = cleanup;
+run(d);

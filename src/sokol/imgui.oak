@@ -1,0 +1,163 @@
+/* sokol.imgui -- Dear ImGui, wrapping sokol_imgui.h and cimgui.
+ *
+ * Dear ImGui is immediate mode: there are no widget objects to create and
+ * keep. Each frame you describe the UI you want by calling widget functions,
+ * and each returns what the user did with it this frame. State lives in your
+ * own variables, not in the library.
+ *
+ *   import sokol.imgui as ui;
+ *
+ *   // in sokol.Desc.init, after gfx.setup()
+ *   ui.setup(ui.desc());
+ *
+ *   // in sokol.Desc.frame, inside the pass
+ *   ui.new_frame();
+ *   if ui.begin('controls') {
+ *     if ui.button('reset') { ... }
+ *     radius = ui.slider_float('radius', radius, 0.0, 10.0);
+ *   }
+ *   ui.end();
+ *   ui.render();                       // between gfx.begin_pass and end_pass
+ *
+ *   // in sokol.Desc.event
+ *   ui.handle_event(e);
+ *
+ *   // in sokol.Desc.cleanup, before gfx.shutdown()
+ *   ui.shutdown();
+ *
+ * Widgets that edit a value take the current value and return the new one,
+ * which is how an immediate-mode API works without out-parameters:
+ *
+ *   volume = ui.slider_float('volume', volume, 0.0, 1.0);
+ *   muted  = ui.checkbox('muted', muted);
+ *
+ * This module is only present when the package was built with ImGui support.
+ * `available()` reports whether that is the case.
+ */
+
+import { Event } from sokol;
+
+export enum Cond {
+  None,
+  Always,
+  Once,
+  FirstUseEver,
+  Appearing,
+}
+
+export record Desc {
+  /* Maximum vertices buffered per frame for ImGui's own draw lists.
+   * 0 selects sokol_imgui's default. */
+  max_vertices : number;
+  /* Let ImGui receive keyboard input and own the text cursor. */
+  no_default_font : bool;
+}
+
+export fn desc() -> Desc {
+  return new Desc { max_vertices : 0, no_default_font : false };
+}
+
+/* Whether this build has ImGui compiled in. When false every other function
+ * here is a no-op and the widget functions return their input unchanged, so
+ * a program can call them unconditionally. */
+export fn available() -> bool;
+
+/* ------------------------------------------------------------ lifecycle -- */
+
+/* Start ImGui. Call from sokol.Desc.init, after gfx.setup(). */
+export fn setup(d : Desc);
+
+/* Shut ImGui down. Call from sokol.Desc.cleanup, before gfx.shutdown(). */
+export fn shutdown();
+
+/* Begin a UI frame. Call once per frame before any widget. */
+export fn new_frame();
+
+/* Draw the UI built this frame. Must be called inside a gfx pass -- between
+ * gfx.begin_pass() and gfx.end_pass() -- so it renders over your scene. */
+export fn render();
+
+/* Feed an input event to ImGui. Call from sokol.Desc.event.
+ *
+ * Returns true when ImGui consumed the event, which means the pointer or
+ * keyboard was over a UI element and your application should ignore it. */
+export fn handle_event(e : Event) -> bool;
+
+/* Whether ImGui currently wants the mouse or the keyboard. Check these
+ * before acting on input in your own code. */
+export fn wants_mouse() -> bool;
+export fn wants_keyboard() -> bool;
+
+/* --------------------------------------------------------------- windows -- */
+
+/* Begin a window. Returns false when the window is collapsed, in which case
+ * you can skip building its contents -- but `end` must be called either way.
+ */
+export fn begin(title : string) -> bool;
+export fn end();
+
+/* Position and size the next window, in framebuffer pixels. */
+export fn set_next_window_pos(x : number, y : number, cond : Cond);
+export fn set_next_window_size(w : number, h : number, cond : Cond);
+
+/* A collapsible section. Returns true when it is open. Call `tree_pop` only
+ * when it returned true. */
+export fn tree_node(label : string) -> bool;
+export fn tree_pop();
+
+export fn begin_child(id : string, w : number, h : number, border : bool) -> bool;
+export fn end_child();
+
+/* --------------------------------------------------------------- widgets -- */
+
+export fn text(s : string);
+export fn text_colored(s : string, r : number, g : number, b : number, a : number);
+export fn bullet_text(s : string);
+export fn label_text(label : string, s : string);
+
+/* True on the frame the button is clicked. */
+export fn button(label : string) -> bool;
+export fn small_button(label : string) -> bool;
+
+/* Return the new value; pass the current one in. */
+export fn checkbox(label : string, value : bool) -> bool;
+export fn radio_button(label : string, active : bool) -> bool;
+export fn slider_float(label : string, value : number,
+                       min : number, max : number) -> number;
+export fn slider_int(label : string, value : number,
+                     min : number, max : number) -> number;
+export fn drag_float(label : string, value : number, speed : number,
+                     min : number, max : number) -> number;
+export fn input_float(label : string, value : number) -> number;
+export fn input_int(label : string, value : number) -> number;
+
+/* Show a number beside a label, read-only.
+ *
+ * This exists because Oak has no number-to-string conversion, so `text` alone
+ * cannot display one. An integer is shown as an integer and a float with a
+ * fraction, which is what a debug readout wants. */
+export fn value(label : string, n : number);
+
+/* A progress bar. `fraction` is 0.0 to 1.0. */
+export fn progress_bar(fraction : number, overlay : string);
+
+/* ---------------------------------------------------------------- layout -- */
+
+export fn separator();
+export fn same_line();
+export fn spacing();
+export fn new_line();
+export fn indent();
+export fn unindent();
+export fn push_id(id : string);
+export fn pop_id();
+export fn set_next_item_width(w : number);
+
+/* ----------------------------------------------------------------- misc -- */
+
+/* Frames per second, as ImGui measures it. */
+export fn framerate() -> number;
+
+/* Show Dear ImGui's own demo window -- the fastest way to see what the
+ * library offers. Returns the (possibly changed) open state. */
+export fn show_demo_window(open : bool) -> bool;

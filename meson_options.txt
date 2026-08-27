@@ -1,0 +1,14 @@
+option(
+  'imgui',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build the sokol.imgui module against cimgui and Dear ImGui. Needs the third_party/cimgui submodule; without it the module is still present and available() reports false.',
+)
+
+option(
+  'gfx_backend',
+  type: 'combo',
+  choices: ['auto', 'glcore', 'gles3', 'd3d11', 'metal', 'wgpu'],
+  value: 'auto',
+  description: 'sokol_gfx backend. "auto" picks the platform default: D3D11 on Windows, Metal on macOS, GLES3 on Emscripten and Android, and desktop GL elsewhere.',
+)

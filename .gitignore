@@ -1,0 +1,18 @@
+# Meson / Ninja build trees
+build/
+builddir/
+subprojects/packagecache/
+
+# Oak
+oak.lock
+
+# Built native libraries. These are release artifacts, not source: CI builds
+# one per platform and attaches them to the release archive, so nothing
+# binary is ever committed here.
+native/
+
+# Editors / OS
+.cache/
+compile_commands.json
+.DS_Store
+*.swp

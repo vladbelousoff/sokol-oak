@@ -1,0 +1,36 @@
+/* sokol.time -- a monotonic high-resolution clock, wrapping sokol_time.h.
+ *
+ * The clock counts in opaque ticks; the `sec` / `ms` / `us` / `ns` functions
+ * convert a tick span into a duration. Ticks are monotonic, so they are safe
+ * for measuring elapsed time in a way wall-clock time is not.
+ *
+ *   import sokol.time as time;
+ *
+ *   time.setup();                       // once, at startup
+ *   let start = time.now();
+ *   ...
+ *   print(time.ms(time.since(start)));
+ *
+ * For per-frame timing, prefer `sokol.frame_duration()`: sokol_app already
+ * smooths it, which is what you want for animation.
+ */
+
+/* Initialise the clock. Call once before anything else here. */
+export fn setup();
+
+/* The current tick count. */
+export fn now() -> number;
+
+/* Ticks elapsed since `start`. */
+export fn since(start : number) -> number;
+
+/* Ticks elapsed since `start`, and `start` is not updated -- use the return
+ * of `now()` again for the next interval. `laptime` keeps a running marker
+ * for you instead: pass the previous return value and get the difference. */
+export fn diff(new_ticks : number, old_ticks : number) -> number;
+
+/* Convert a tick span to a duration. */
+export fn sec(ticks : number) -> number;
+export fn ms(ticks : number) -> number;
+export fn us(ticks : number) -> number;
+export fn ns(ticks : number) -> number;

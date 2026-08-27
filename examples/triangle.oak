@@ -1,0 +1,81 @@
+/* A coloured triangle: a vertex buffer, a shader and a pipeline.
+ *
+ *   oak examples/triangle.oak
+ *
+ * The shader source is GLSL because this build targets a GL backend. Check
+ * gfx.query_backend() if you need to support more than one -- sokol does not
+ * translate shaders, it takes the language the running backend speaks.
+ */
+import { Desc, desc, run } from sokol;
+import sokol.gfx as gfx;
+
+fn init(mut d : Desc) {
+  gfx.setup(gfx.desc());
+
+  /* Three vertices, each x, y, z followed by r, g, b, a. */
+  let vertices = gfx.buffer_desc();
+  vertices.label = 'triangle-vertices';
+  vertices.float_data = [
+     0.0,  0.5, 0.5,   1.0, 0.0, 0.0, 1.0,
+     0.5, -0.5, 0.5,   0.0, 1.0, 0.0, 1.0,
+    -0.5, -0.5, 0.5,   0.0, 0.0, 1.0, 1.0,
+  ];
+
+  let sd = gfx.shader_desc();
+  sd.label = 'triangle-shader';
+  /* The names here are how the GL backends bind vertex attributes, so they
+   * must match the `in` declarations below and the order of pipeline attrs. */
+  sd.attrs = [ 'position', 'color0' ];
+  sd.vertex_source = '#version 410
+in vec4 position;
+in vec4 color0;
+out vec4 color;
+void main() {
+  gl_Position = position;
+  color = color0;
+}
+';
+  sd.fragment_source = '#version 410
+in vec4 color;
+out vec4 frag_color;
+void main() {
+  frag_color = color;
+}
+';
+
+  let pd = gfx.pipeline_desc();
+  pd.label = 'triangle-pipeline';
+  pd.shader = gfx.make_shader(sd);
+  let pos = gfx.vertex_attr(gfx.VertexFormat.Float3);
+  let col = gfx.vertex_attr(gfx.VertexFormat.Float4);
+  col.offset = 12;
+  pd.layout.attrs = [ pos, col ];
+
+  let bind = gfx.bindings();
+  bind.vertex_buffers = [ gfx.make_buffer(vertices) ];
+
+  d.pipelines = [ gfx.make_pipeline(pd) ];
+  d.bindings = [ bind ];
+}
+
+fn frame(mut d : Desc) {
+  gfx.begin_pass(gfx.clear_action(gfx.color(0.1, 0.1, 0.12, 1.0)));
+  gfx.apply_pipeline(d.pipelines[0]);
+  gfx.apply_bindings(d.bindings[0]);
+  gfx.draw(0, 3, 1);
+  gfx.end_pass();
+  gfx.commit();
+}
+
+fn cleanup(mut d : Desc) {
+  gfx.shutdown();
+}
+
+let d = desc();
+d.title = 'sokol-oak: triangle';
+d.width = 800;
+d.height = 600;
+d.init = init;
+d.frame = frame;
+d.cleanup = cleanup;
+run(d);

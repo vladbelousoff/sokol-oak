@@ -1,0 +1,282 @@
+/* sokol -- the application layer, wrapping sokol_app.h.
+ *
+ * This module owns the window, the render loop and input. It is the entry
+ * point of every sokol-oak program: you hand `run` a Desc holding your
+ * callbacks, and sokol_app calls them until the window closes.
+ *
+ * The loop is not yours to drive. `run` does not return until the
+ * application has quit, and on the web backend it does not return at all --
+ * the browser drives the frame callback. Anything that has to happen after
+ * the last frame belongs in `cleanup`, not after the call to `run`.
+ *
+ *   import { desc, run, Desc } from sokol;
+ *   import sokol.gfx as gfx;
+ *
+ *   fn init(mut d : Desc) { gfx.setup(gfx.desc()); }
+ *   fn frame(mut d : Desc) { ... }
+ *   fn cleanup(mut d : Desc) { gfx.shutdown(); }
+ *
+ *   let d = desc();
+ *   d.title = 'hello';
+ *   d.init = init;
+ *   d.frame = frame;
+ *   d.cleanup = cleanup;
+ *   run(d);
+ *
+ * An Oak record literal has to name every field, which for a Desc would mean
+ * spelling out ten of them to change one. `desc()` returns a filled Desc
+ * instead, so a program sets only what it cares about. Every descriptor in
+ * this package follows that rule.
+ */
+
+/* The Desc scratch arrays below hold gfx handles, and a record field cannot
+ * name a module-qualified type -- so these are imported unqualified rather
+ * than through an alias. */
+import { Buffer, Image, Sampler, Shader, Pipeline, View, Bindings } from sokol.gfx;
+
+export enum EventType {
+  Invalid,
+  KeyDown,
+  KeyUp,
+  Char,
+  MouseDown,
+  MouseUp,
+  MouseScroll,
+  MouseMove,
+  MouseEnter,
+  MouseLeave,
+  Resized,
+  Iconified,
+  Restored,
+  Focused,
+  Unfocused,
+  Suspended,
+  Resumed,
+  QuitRequested,
+  ClipboardPasted,
+  FilesDropped,
+}
+
+export enum MouseButton {
+  Invalid,
+  Left,
+  Right,
+  Middle,
+}
+
+/* Modifier bits, OR-ed together in Event.modifiers. */
+export enum Modifier {
+  Shift,
+  Ctrl,
+  Alt,
+  Super,
+  LeftMouse,
+  RightMouse,
+  MiddleMouse,
+}
+
+/* Key codes, matching sokol_app's SAPP_KEYCODE_* (which follow GLFW). */
+export enum Key {
+  Invalid,
+  Space,
+  Apostrophe,
+  Comma,
+  Minus,
+  Period,
+  Slash,
+  Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
+  Semicolon,
+  Equal,
+  A, B, C, D, E, F, G, H, I, J, K, L, M,
+  N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+  LeftBracket,
+  Backslash,
+  RightBracket,
+  GraveAccent,
+  Escape,
+  Enter,
+  Tab,
+  Backspace,
+  Insert,
+  Delete,
+  Right,
+  Left,
+  Down,
+  Up,
+  PageUp,
+  PageDown,
+  Home,
+  End,
+  CapsLock,
+  ScrollLock,
+  NumLock,
+  PrintScreen,
+  Pause,
+  F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+  LeftShift,
+  LeftControl,
+  LeftAlt,
+  LeftSuper,
+  RightShift,
+  RightControl,
+  RightAlt,
+  RightSuper,
+  Menu,
+}
+
+/* A single input event, as delivered to Desc.event.
+ *
+ * The record is rebuilt for each event and is yours to keep, but the values
+ * in it are a snapshot: storing one does not keep the window state it
+ * described. `key_code` is meaningful for KeyDown/KeyUp, `char_code` for
+ * Char, the mouse fields for the mouse events, and so on -- the rest are
+ * left at zero.
+ */
+export record Event {
+  type : EventType;
+  frame_count : number;
+  key_code : Key;
+  char_code : number;
+  key_repeat : bool;
+  /* Bitwise OR of Modifier values. Test with `modifiers & Modifier.Shift`. */
+  modifiers : number;
+  mouse_button : MouseButton;
+  mouse_x : number;
+  mouse_y : number;
+  mouse_dx : number;
+  mouse_dy : number;
+  scroll_x : number;
+  scroll_y : number;
+  window_width : number;
+  window_height : number;
+  framebuffer_width : number;
+  framebuffer_height : number;
+}
+
+/* How the application is set up and which callbacks drive it.
+ *
+ * Every callback is optional; leaving one unset simply means nothing runs at
+ * that point. `init` runs once after the window and graphics context exist --
+ * it is the earliest point at which gfx.setup() may be called. `frame` runs
+ * once per display refresh. `event` runs for each input event, before the
+ * frame it belongs to. `cleanup` runs once as the window closes, while the
+ * graphics context is still alive, which is what makes it the right place
+ * for gfx.shutdown().
+ */
+export record Desc {
+  title : string;
+  width : number;
+  height : number;
+  /* MSAA sample count for the default framebuffer. 1 disables MSAA. */
+  sample_count : number;
+  high_dpi : bool;
+  fullscreen : bool;
+  /* Request an sRGB-capable framebuffer. Not supported on WebGL. */
+  srgb : bool;
+  /* Clipboard access is off by default; get_clipboard and set_clipboard do
+   * nothing until this is set. */
+  enable_clipboard : bool;
+  /* Scratch state, carried between callbacks.
+   *
+   * Oak has no closures and no module-level mutable state: a function sees
+   * its parameters and nothing else. So a frame callback cannot reach a
+   * pipeline that init created -- unless the state travels through the
+   * arguments, which is what these arrays are for. Every callback receives
+   * this same Desc, so whatever init writes here, frame reads.
+   *
+   * Declare your callbacks `mut` to write them:
+   *
+   *   fn init(mut d : Desc) { d.pipelines = [ gfx.make_pipeline(pd) ]; }
+   *   fn frame(mut d : Desc) { gfx.apply_pipeline(d.pipelines[0]); }
+   *
+   * `numbers` is the usual home for a clock, an angle or a counter; the
+   * handle arrays hold what gfx handed back. */
+  numbers : number[];
+  flags : bool[];
+  strings : string[];
+  buffers : Buffer[];
+  images : Image[];
+  samplers : Sampler[];
+  shaders : Shader[];
+  pipelines : Pipeline[];
+  views : View[];
+  bindings : Bindings[];
+
+  /* Each callback receives the Desc it was registered on. `event` receives
+   * the Desc and then the event. */
+  init : (Desc) -> void;
+  frame : (Desc) -> void;
+  event : (Desc, Event) -> void;
+  cleanup : (Desc) -> void;
+}
+
+/* A Desc with sensible defaults: an 800x600 window titled 'sokol-oak', no
+ * MSAA, high-DPI on, and callbacks that do nothing. Set what you need and
+ * hand it to `run`. */
+export fn desc() -> Desc {
+  return new Desc {
+    title : 'sokol-oak',
+    width : 800,
+    height : 600,
+    sample_count : 1,
+    high_dpi : true,
+    fullscreen : false,
+    srgb : false,
+    enable_clipboard : false,
+    numbers : new number[],
+    flags : new bool[],
+    strings : new string[],
+    buffers : new Buffer[],
+    images : new Image[],
+    samplers : new Sampler[],
+    shaders : new Shader[],
+    pipelines : new Pipeline[],
+    views : new View[],
+    bindings : new Bindings[],
+    init : (d : Desc) {},
+    frame : (d : Desc) {},
+    event : (d : Desc, e : Event) {},
+    cleanup : (d : Desc) {},
+  };
+}
+
+/* Open the window and run the frame loop until the application quits.
+ *
+ * Does not return until then -- and never returns on the web backend. Calling
+ * it twice in one process is not supported. */
+export fn run(desc : Desc);
+
+/* Ask the window manager to close the window. Delivers a QuitRequested event
+ * first, so a program can refuse by ignoring it; use `quit` to leave without
+ * asking. */
+export fn request_quit();
+
+/* Quit immediately, without a QuitRequested event. `cleanup` still runs. */
+export fn quit();
+
+/* Current framebuffer size in pixels. On a high-DPI display with
+ * Desc.high_dpi set these are larger than the window size in points. */
+export fn width() -> number;
+export fn height() -> number;
+
+/* Framebuffer pixels per window point: 2.0 on a typical Retina display,
+ * 1.0 otherwise (and always 1.0 when high_dpi is false). */
+export fn dpi_scale() -> number;
+
+/* Frames rendered since startup, and the duration of the last frame in
+ * seconds -- already smoothed by sokol_app, so it is the number to multiply
+ * per-frame motion by. */
+export fn frame_count() -> number;
+export fn frame_duration() -> number;
+
+export fn is_fullscreen() -> bool;
+export fn toggle_fullscreen();
+export fn show_mouse(shown : bool);
+export fn mouse_shown() -> bool;
+/* Lock the mouse to the window and switch to relative motion: while locked,
+ * Event.mouse_dx/dy report movement and mouse_x/y stop being meaningful. */
+export fn lock_mouse(locked : bool);
+export fn mouse_locked() -> bool;
+export fn set_window_title(title : string);
+export fn set_clipboard(text : string);
+export fn get_clipboard() -> string;

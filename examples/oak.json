@@ -1,0 +1,10 @@
+{
+  "name": "vladbelousoff/sokol-oak-examples",
+  "version": "0.1.0",
+  "module": "examples",
+  "src": ".",
+  "oak": ">=1.0.0",
+  "deps": {
+    "sokol": { "path": ".." }
+  }
+}

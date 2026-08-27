@@ -1,0 +1,13 @@
+{
+  "name": "vladbelousoff/sokol-oak",
+  "version": "0.1.0",
+  "module": "sokol",
+  "src": "src",
+  "oak": ">=1.0.0",
+  "license": "Zlib",
+  "native": {
+    "abi": 2,
+    "lib": "sokol_oak",
+    "dir": "native"
+  }
+}

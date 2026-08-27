@@ -1,0 +1,887 @@
+/* sokol.gfx -- the rendering layer, wrapping sokol_gfx.h.
+ *
+ * The shape of the C API survives the binding: you create immutable resource
+ * objects up front (buffers, shaders, pipelines), then each frame you begin a
+ * pass, apply a pipeline and its bindings, draw, and commit.
+ *
+ *   import sokol.gfx as gfx;
+ *
+ *   gfx.setup(gfx.desc());              // in sokol.Desc.init
+ *   ...
+ *   gfx.begin_pass(action);             // in sokol.Desc.frame
+ *   gfx.apply_pipeline(pip);
+ *   gfx.apply_bindings(bind);
+ *   gfx.draw(0, 3, 1);
+ *   gfx.end_pass();
+ *   gfx.commit();
+ *
+ * Every descriptor record has a matching constructor -- `buffer_desc()`,
+ * `pipeline_desc()`, and so on -- that returns it filled with the same
+ * defaults sokol_gfx uses for a zero-initialised struct. Build descriptors
+ * that way and set only the fields you care about; an Oak record literal
+ * would make you name all of them.
+ *
+ * The swapchain is handled for you. `begin_pass` renders to the window that
+ * `sokol.run` opened, taking its size, pixel format and sample count from
+ * sokol_app -- there is no environment or swapchain to pass, which is what
+ * sokol_glue.h does in a C program.
+ */
+
+/* ---------------------------------------------------------------- enums -- */
+
+export enum Backend {
+  GLCore,
+  GLES3,
+  D3D11,
+  MetalIOS,
+  MetalMacOS,
+  MetalSimulator,
+  Wgpu,
+  Vulkan,
+  Dummy,
+}
+
+export enum PixelFormat {
+  Default,
+  None,
+  R8,
+  R8SN,
+  R8UI,
+  R8SI,
+  R16,
+  R16SN,
+  R16UI,
+  R16SI,
+  R16F,
+  RG8,
+  RG8SN,
+  RG8UI,
+  RG8SI,
+  R32UI,
+  R32SI,
+  R32F,
+  RG16,
+  RG16SN,
+  RG16UI,
+  RG16SI,
+  RG16F,
+  RGBA8,
+  SRGB8A8,
+  RGBA8SN,
+  RGBA8UI,
+  RGBA8SI,
+  BGRA8,
+  RGB10A2,
+  RG11B10F,
+  RGB9E5,
+  RG32UI,
+  RG32SI,
+  RG32F,
+  RGBA16,
+  RGBA16SN,
+  RGBA16UI,
+  RGBA16SI,
+  RGBA16F,
+  RGBA32UI,
+  RGBA32SI,
+  RGBA32F,
+  Depth,
+  DepthStencil,
+}
+
+export enum PrimitiveType {
+  Default,
+  Points,
+  Lines,
+  LineStrip,
+  Triangles,
+  TriangleStrip,
+}
+
+export enum IndexType {
+  Default,
+  None,
+  UInt16,
+  UInt32,
+}
+
+export enum VertexFormat {
+  Invalid,
+  Float,
+  Float2,
+  Float3,
+  Float4,
+  Int,
+  Int2,
+  Int3,
+  Int4,
+  UInt,
+  UInt2,
+  UInt3,
+  UInt4,
+  Byte4,
+  Byte4N,
+  UByte4,
+  UByte4N,
+  Short2,
+  Short2N,
+  UShort2,
+  UShort2N,
+  Short4,
+  Short4N,
+  UShort4,
+  UShort4N,
+  UInt10N2,
+  Half2,
+  Half4,
+}
+
+export enum VertexStep {
+  Default,
+  PerVertex,
+  PerInstance,
+}
+
+export enum LoadAction {
+  Default,
+  Clear,
+  Load,
+  DontCare,
+}
+
+export enum StoreAction {
+  Default,
+  Store,
+  DontCare,
+}
+
+export enum Filter {
+  Default,
+  Nearest,
+  Linear,
+}
+
+export enum Wrap {
+  Default,
+  Repeat,
+  ClampToEdge,
+  ClampToBorder,
+  MirroredRepeat,
+}
+
+export enum CullMode {
+  Default,
+  None,
+  Front,
+  Back,
+}
+
+export enum FaceWinding {
+  Default,
+  CCW,
+  CW,
+}
+
+export enum CompareFunc {
+  Default,
+  Never,
+  Less,
+  Equal,
+  LessEqual,
+  Greater,
+  NotEqual,
+  GreaterEqual,
+  Always,
+}
+
+export enum BlendFactor {
+  Default,
+  Zero,
+  One,
+  SrcColor,
+  OneMinusSrcColor,
+  SrcAlpha,
+  OneMinusSrcAlpha,
+  DstColor,
+  OneMinusDstColor,
+  DstAlpha,
+  OneMinusDstAlpha,
+  SrcAlphaSaturated,
+  BlendColor,
+  OneMinusBlendColor,
+  BlendAlpha,
+  OneMinusBlendAlpha,
+}
+
+export enum BlendOp {
+  Default,
+  Add,
+  Subtract,
+  ReverseSubtract,
+  Min,
+  Max,
+}
+
+export enum ShaderStage {
+  None,
+  Vertex,
+  Fragment,
+  Compute,
+}
+
+export enum UniformType {
+  Invalid,
+  Float,
+  Float2,
+  Float3,
+  Float4,
+  Int,
+  Int2,
+  Int3,
+  Int4,
+  Mat4,
+}
+
+export enum ImageType {
+  Default,
+  Image2D,
+  Cube,
+  Image3D,
+  Array,
+}
+
+export enum ImageSampleType {
+  Default,
+  Float,
+  Depth,
+  SInt,
+  UInt,
+  UnfilterableFloat,
+}
+
+export enum SamplerType {
+  Default,
+  Filtering,
+  Comparison,
+  NonFiltering,
+}
+
+/* ------------------------------------------------------------- handles -- */
+
+/* Resource handles. Each is a small opaque value -- copying one copies the
+ * handle, not the resource. A handle stays valid until you destroy it, and a
+ * destroyed or never-created handle is inert rather than dangerous: sokol_gfx
+ * tracks resource state and quietly skips draw calls whose resources are not
+ * valid. */
+export record Buffer;
+export record Image;
+export record Sampler;
+export record Shader;
+export record Pipeline;
+export record View;
+
+/* -------------------------------------------------------------- records -- */
+
+export record Color { r : number; g : number; b : number; a : number; }
+
+export fn color(r : number, g : number, b : number, a : number) -> Color {
+  return new Color { r : r, g : g, b : b, a : a };
+}
+
+/* How a buffer will be used. Exactly one of the update frequencies applies:
+ * `immutable` (the default) means the contents are supplied at creation and
+ * never change; `dynamic_update` and `stream_update` allow update_buffer and
+ * append_buffer respectively. */
+export record BufferUsage {
+  vertex_buffer : bool;
+  index_buffer : bool;
+  storage_buffer : bool;
+  immutable : bool;
+  dynamic_update : bool;
+  stream_update : bool;
+}
+
+export fn buffer_usage() -> BufferUsage {
+  return new BufferUsage {
+    vertex_buffer : true,
+    index_buffer : false,
+    storage_buffer : false,
+    immutable : true,
+    dynamic_update : false,
+    stream_update : false,
+  };
+}
+
+/* Initial buffer contents.
+ *
+ * Supply the data through whichever of the three typed fields matches what
+ * the buffer holds -- `float_data` for vertices, `uint16_data` or
+ * `uint32_data` for indices -- and leave the others empty. Setting more than
+ * one is an error. For a buffer you intend to fill later, leave all three
+ * empty and set `size` to the byte size to reserve. */
+export record BufferDesc {
+  size : number;
+  usage : BufferUsage;
+  float_data : number[];
+  uint16_data : number[];
+  uint32_data : number[];
+  label : string;
+}
+
+export fn buffer_desc() -> BufferDesc {
+  return new BufferDesc {
+    size : 0,
+    usage : buffer_usage(),
+    float_data : new number[],
+    uint16_data : new number[],
+    uint32_data : new number[],
+    label : '',
+  };
+}
+
+export record ImageUsage {
+  color_attachment : bool;
+  resolve_attachment : bool;
+  depth_stencil_attachment : bool;
+  storage_image : bool;
+  immutable : bool;
+  dynamic_update : bool;
+  stream_update : bool;
+}
+
+export fn image_usage() -> ImageUsage {
+  return new ImageUsage {
+    color_attachment : false,
+    resolve_attachment : false,
+    depth_stencil_attachment : false,
+    storage_image : false,
+    immutable : true,
+    dynamic_update : false,
+    stream_update : false,
+  };
+}
+
+/* A 2D image. `pixels` is one byte per channel in RGBA order, so a WxH RGBA8
+ * image needs W*H*4 entries, each 0..255. */
+export record ImageDesc {
+  type : ImageType;
+  width : number;
+  height : number;
+  num_mipmaps : number;
+  usage : ImageUsage;
+  pixel_format : PixelFormat;
+  sample_count : number;
+  pixels : number[];
+  label : string;
+}
+
+export fn image_desc() -> ImageDesc {
+  return new ImageDesc {
+    type : ImageType.Image2D,
+    width : 0,
+    height : 0,
+    num_mipmaps : 1,
+    usage : image_usage(),
+    pixel_format : PixelFormat.RGBA8,
+    sample_count : 1,
+    pixels : new number[],
+    label : '',
+  };
+}
+
+export record SamplerDesc {
+  min_filter : Filter;
+  mag_filter : Filter;
+  mipmap_filter : Filter;
+  wrap_u : Wrap;
+  wrap_v : Wrap;
+  wrap_w : Wrap;
+  min_lod : number;
+  max_lod : number;
+  compare : CompareFunc;
+  max_anisotropy : number;
+  label : string;
+}
+
+export fn sampler_desc() -> SamplerDesc {
+  return new SamplerDesc {
+    min_filter : Filter.Nearest,
+    mag_filter : Filter.Nearest,
+    mipmap_filter : Filter.Nearest,
+    wrap_u : Wrap.Repeat,
+    wrap_v : Wrap.Repeat,
+    wrap_w : Wrap.Repeat,
+    min_lod : 0.0,
+    max_lod : 1000.0,
+    compare : CompareFunc.Never,
+    max_anisotropy : 1,
+    label : '',
+  };
+}
+
+/* A view onto an image, which is what a shader actually binds. Create one per
+ * image you want to sample. */
+export record ViewDesc {
+  texture : Image;
+  /* A count of 0 means "all of them from `base` on", which is what a view
+   * over a whole texture wants. */
+  base_mip_level : number;
+  mip_level_count : number;
+  base_slice : number;
+  slice_count : number;
+  label : string;
+}
+
+export fn view_desc() -> ViewDesc {
+  return new ViewDesc {
+    texture : invalid_image(),
+    base_mip_level : 0,
+    mip_level_count : 0,
+    base_slice : 0,
+    slice_count : 0,
+    label : '',
+  };
+}
+
+/* One member of a uniform block, as the GL backends see it. The GL backends
+ * set uniforms by name, so `glsl_name` must match the declaration in the
+ * shader source; the other backends ignore it and go by offset. */
+export record GlslUniform {
+  type : UniformType;
+  array_count : number;
+  glsl_name : string;
+}
+
+export fn glsl_uniform(type : UniformType, glsl_name : string) -> GlslUniform {
+  return new GlslUniform { type : type, array_count : 0, glsl_name : glsl_name };
+}
+
+/* A uniform block, matching one `apply_uniforms` slot. `size` is the byte
+ * size of the block as the shader declares it. */
+export record UniformBlockDesc {
+  stage : ShaderStage;
+  size : number;
+  glsl_uniforms : GlslUniform[];
+}
+
+export fn uniform_block_desc() -> UniformBlockDesc {
+  return new UniformBlockDesc {
+    stage : ShaderStage.Vertex,
+    size : 0,
+    glsl_uniforms : new GlslUniform[],
+  };
+}
+
+/* A texture the shader reads, occupying one view bind slot. */
+export record TextureViewDesc {
+  stage : ShaderStage;
+  image_type : ImageType;
+  sample_type : ImageSampleType;
+  multisampled : bool;
+}
+
+export fn texture_view_desc() -> TextureViewDesc {
+  return new TextureViewDesc {
+    stage : ShaderStage.Fragment,
+    image_type : ImageType.Image2D,
+    sample_type : ImageSampleType.Float,
+    multisampled : false,
+  };
+}
+
+export record ShaderSamplerDesc {
+  stage : ShaderStage;
+  sampler_type : SamplerType;
+}
+
+export fn shader_sampler_desc() -> ShaderSamplerDesc {
+  return new ShaderSamplerDesc {
+    stage : ShaderStage.Fragment,
+    sampler_type : SamplerType.Filtering,
+  };
+}
+
+/* Ties a texture slot and a sampler slot to one GLSL `sampler2D` uniform.
+ * `view_slot` and `sampler_slot` index the `views` and `samplers` arrays of
+ * the ShaderDesc. */
+export record TextureSamplerPair {
+  stage : ShaderStage;
+  view_slot : number;
+  sampler_slot : number;
+  glsl_name : string;
+}
+
+export fn texture_sampler_pair(view_slot : number, sampler_slot : number,
+                               glsl_name : string) -> TextureSamplerPair {
+  return new TextureSamplerPair {
+    stage : ShaderStage.Fragment,
+    view_slot : view_slot,
+    sampler_slot : sampler_slot,
+    glsl_name : glsl_name,
+  };
+}
+
+/* A shader program.
+ *
+ * `attrs` names the vertex attributes in layout order, matching the `attrs`
+ * of the pipeline that uses this shader. The names matter on the GL backends,
+ * where attributes are bound by name.
+ *
+ * The sources are backend-specific: what you write here has to be GLSL for a
+ * GL backend, MSL for Metal, HLSL for D3D11. `query_backend()` tells you
+ * which one is running. */
+export record ShaderDesc {
+  vertex_source : string;
+  fragment_source : string;
+  vertex_entry : string;
+  fragment_entry : string;
+  attrs : string[];
+  uniform_blocks : UniformBlockDesc[];
+  views : TextureViewDesc[];
+  samplers : ShaderSamplerDesc[];
+  texture_sampler_pairs : TextureSamplerPair[];
+  label : string;
+}
+
+export fn shader_desc() -> ShaderDesc {
+  return new ShaderDesc {
+    vertex_source : '',
+    fragment_source : '',
+    vertex_entry : 'main',
+    fragment_entry : 'main',
+    attrs : new string[],
+    uniform_blocks : new UniformBlockDesc[],
+    views : new TextureViewDesc[],
+    samplers : new ShaderSamplerDesc[],
+    texture_sampler_pairs : new TextureSamplerPair[],
+    label : '',
+  };
+}
+
+/* One vertex attribute: which vertex buffer it comes from, its byte offset
+ * within a vertex, and how to read it. */
+export record VertexAttr {
+  buffer_index : number;
+  offset : number;
+  format : VertexFormat;
+}
+
+export fn vertex_attr(format : VertexFormat) -> VertexAttr {
+  return new VertexAttr { buffer_index : 0, offset : 0, format : format };
+}
+
+/* Per-vertex-buffer layout. A `stride` of 0 means sokol_gfx computes it from
+ * the attributes that read from this buffer, which is what you want unless
+ * the vertices are padded. */
+export record VertexBufferLayout {
+  stride : number;
+  step_func : VertexStep;
+  step_rate : number;
+}
+
+export fn vertex_buffer_layout() -> VertexBufferLayout {
+  return new VertexBufferLayout {
+    stride : 0,
+    step_func : VertexStep.PerVertex,
+    step_rate : 1,
+  };
+}
+
+export record VertexLayout {
+  buffers : VertexBufferLayout[];
+  attrs : VertexAttr[];
+}
+
+export fn vertex_layout() -> VertexLayout {
+  return new VertexLayout {
+    buffers : new VertexBufferLayout[],
+    attrs : new VertexAttr[],
+  };
+}
+
+export record DepthState {
+  pixel_format : PixelFormat;
+  compare : CompareFunc;
+  write_enabled : bool;
+  bias : number;
+  bias_slope_scale : number;
+  bias_clamp : number;
+}
+
+export fn depth_state() -> DepthState {
+  return new DepthState {
+    pixel_format : PixelFormat.Default,
+    compare : CompareFunc.Always,
+    write_enabled : false,
+    bias : 0.0,
+    bias_slope_scale : 0.0,
+    bias_clamp : 0.0,
+  };
+}
+
+export record BlendState {
+  enabled : bool;
+  src_factor_rgb : BlendFactor;
+  dst_factor_rgb : BlendFactor;
+  op_rgb : BlendOp;
+  src_factor_alpha : BlendFactor;
+  dst_factor_alpha : BlendFactor;
+  op_alpha : BlendOp;
+}
+
+export fn blend_state() -> BlendState {
+  return new BlendState {
+    enabled : false,
+    src_factor_rgb : BlendFactor.One,
+    dst_factor_rgb : BlendFactor.Zero,
+    op_rgb : BlendOp.Add,
+    src_factor_alpha : BlendFactor.One,
+    dst_factor_alpha : BlendFactor.Zero,
+    op_alpha : BlendOp.Add,
+  };
+}
+
+/* Straight alpha blending, the common case for 2D and UI drawing. */
+export fn alpha_blend_state() -> BlendState {
+  return new BlendState {
+    enabled : true,
+    src_factor_rgb : BlendFactor.SrcAlpha,
+    dst_factor_rgb : BlendFactor.OneMinusSrcAlpha,
+    op_rgb : BlendOp.Add,
+    src_factor_alpha : BlendFactor.One,
+    dst_factor_alpha : BlendFactor.OneMinusSrcAlpha,
+    op_alpha : BlendOp.Add,
+  };
+}
+
+export record ColorTargetState {
+  pixel_format : PixelFormat;
+  write_mask_r : bool;
+  write_mask_g : bool;
+  write_mask_b : bool;
+  write_mask_a : bool;
+  blend : BlendState;
+}
+
+export fn color_target_state() -> ColorTargetState {
+  return new ColorTargetState {
+    pixel_format : PixelFormat.Default,
+    write_mask_r : true,
+    write_mask_g : true,
+    write_mask_b : true,
+    write_mask_a : true,
+    blend : blend_state(),
+  };
+}
+
+/* A render pipeline: a shader plus the fixed-function state a draw call runs
+ * with. `colors` describes the colour attachments; leave it empty for the
+ * single default target. */
+export record PipelineDesc {
+  shader : Shader;
+  layout : VertexLayout;
+  depth : DepthState;
+  colors : ColorTargetState[];
+  primitive_type : PrimitiveType;
+  index_type : IndexType;
+  cull_mode : CullMode;
+  face_winding : FaceWinding;
+  sample_count : number;
+  blend_color : Color;
+  alpha_to_coverage_enabled : bool;
+  label : string;
+}
+
+export fn pipeline_desc() -> PipelineDesc {
+  return new PipelineDesc {
+    shader : invalid_shader(),
+    layout : vertex_layout(),
+    depth : depth_state(),
+    colors : new ColorTargetState[],
+    primitive_type : PrimitiveType.Triangles,
+    index_type : IndexType.None,
+    cull_mode : CullMode.None,
+    face_winding : FaceWinding.CW,
+    sample_count : 0,
+    blend_color : color(0.0, 0.0, 0.0, 0.0),
+    alpha_to_coverage_enabled : false,
+    label : '',
+  };
+}
+
+/* The resources a draw call reads. Slots are positional and must line up with
+ * the shader's declarations. */
+export record Bindings {
+  vertex_buffers : Buffer[];
+  vertex_buffer_offsets : number[];
+  index_buffer : Buffer;
+  index_buffer_offset : number;
+  views : View[];
+  samplers : Sampler[];
+}
+
+export fn bindings() -> Bindings {
+  return new Bindings {
+    vertex_buffers : new Buffer[],
+    vertex_buffer_offsets : new number[],
+    index_buffer : invalid_buffer(),
+    index_buffer_offset : 0,
+    views : new View[],
+    samplers : new Sampler[],
+  };
+}
+
+export record ColorAttachmentAction {
+  load_action : LoadAction;
+  store_action : StoreAction;
+  clear_value : Color;
+}
+
+export fn color_attachment_action() -> ColorAttachmentAction {
+  return new ColorAttachmentAction {
+    load_action : LoadAction.Clear,
+    store_action : StoreAction.Store,
+    clear_value : color(0.5, 0.5, 0.5, 1.0),
+  };
+}
+
+export record DepthAttachmentAction {
+  load_action : LoadAction;
+  store_action : StoreAction;
+  clear_value : number;
+}
+
+export fn depth_attachment_action() -> DepthAttachmentAction {
+  return new DepthAttachmentAction {
+    load_action : LoadAction.Clear,
+    store_action : StoreAction.DontCare,
+    clear_value : 1.0,
+  };
+}
+
+/* What happens to each attachment at the start and end of a pass. */
+export record PassAction {
+  colors : ColorAttachmentAction[];
+  depth : DepthAttachmentAction;
+}
+
+export fn pass_action() -> PassAction {
+  return new PassAction {
+    colors : [ color_attachment_action() ],
+    depth : depth_attachment_action(),
+  };
+}
+
+/* A pass action that clears the colour attachment to `c`. */
+export fn clear_action(c : Color) -> PassAction {
+  let ca = new ColorAttachmentAction {
+    load_action : LoadAction.Clear,
+    store_action : StoreAction.Store,
+    clear_value : new Color { r : c.r, g : c.g, b : c.b, a : c.a },
+  };
+  return new PassAction {
+    colors : [ ca ],
+    depth : depth_attachment_action(),
+  };
+}
+
+export record Desc {
+  /* 0 selects sokol_gfx's own default for each pool. */
+  buffer_pool_size : number;
+  image_pool_size : number;
+  sampler_pool_size : number;
+  shader_pool_size : number;
+  pipeline_pool_size : number;
+  view_pool_size : number;
+  /* Log resource creation failures and validation errors to stderr. */
+  logger : bool;
+}
+
+export fn desc() -> Desc {
+  return new Desc {
+    buffer_pool_size : 0,
+    image_pool_size : 0,
+    sampler_pool_size : 0,
+    shader_pool_size : 0,
+    pipeline_pool_size : 0,
+    view_pool_size : 0,
+    logger : true,
+  };
+}
+
+/* ------------------------------------------------------------ lifecycle -- */
+
+/* Start sokol_gfx against the window sokol.run opened. Call this from
+ * sokol.Desc.init -- there is no graphics context before that. */
+export fn setup(d : Desc);
+
+/* Release every resource and shut sokol_gfx down. Belongs in
+ * sokol.Desc.cleanup, while the context is still alive. */
+export fn shutdown();
+
+export fn is_valid() -> bool;
+
+/* Which backend this build is running on, which is what decides the shader
+ * language `make_shader` expects. */
+export fn query_backend() -> Backend;
+
+/* ------------------------------------------------------------ resources -- */
+
+export fn make_buffer(d : BufferDesc) -> Buffer;
+export fn make_image(d : ImageDesc) -> Image;
+export fn make_sampler(d : SamplerDesc) -> Sampler;
+export fn make_shader(d : ShaderDesc) -> Shader;
+export fn make_pipeline(d : PipelineDesc) -> Pipeline;
+export fn make_view(d : ViewDesc) -> View;
+
+export fn destroy_buffer(b : Buffer);
+export fn destroy_image(i : Image);
+export fn destroy_sampler(s : Sampler);
+export fn destroy_shader(s : Shader);
+export fn destroy_pipeline(p : Pipeline);
+export fn destroy_view(v : View);
+
+/* Handles that name no resource. Useful as a placeholder in a descriptor you
+ * are about to fill in. */
+export fn invalid_buffer() -> Buffer;
+export fn invalid_image() -> Image;
+export fn invalid_sampler() -> Sampler;
+export fn invalid_shader() -> Shader;
+export fn invalid_pipeline() -> Pipeline;
+export fn invalid_view() -> View;
+
+/* Replace the whole contents of a `dynamic_update` buffer. Legal once per
+ * frame per buffer. */
+export fn update_buffer_f32(b : Buffer, data : number[]);
+
+/* Append to a `stream_update` buffer and return the byte offset the data
+ * landed at, for use as a vertex buffer offset in Bindings. */
+export fn append_buffer_f32(b : Buffer, data : number[]) -> number;
+
+/* ----------------------------------------------------------- the frame -- */
+
+/* Begin a render pass targeting the window. */
+export fn begin_pass(action : PassAction);
+export fn end_pass();
+
+export fn apply_pipeline(p : Pipeline);
+export fn apply_bindings(b : Bindings);
+
+/* Upload one uniform block. `slot` is the index into the shader's
+ * `uniform_blocks`, and the data is written as tightly packed floats. */
+export fn apply_uniforms_f32(slot : number, data : number[]);
+
+export fn apply_viewport(x : number, y : number, w : number, h : number,
+                         origin_top_left : bool);
+export fn apply_scissor_rect(x : number, y : number, w : number, h : number,
+                             origin_top_left : bool);
+
+/* Draw `num_elements` elements starting at `base_element`, `num_instances`
+ * times. Without an index buffer bound these are vertices; with one they are
+ * indices. */
+export fn draw(base_element : number, num_elements : number,
+               num_instances : number);
+
+/* End the frame and hand the command buffer to the GPU. The last thing a
+ * frame callback does. */
+export fn commit();

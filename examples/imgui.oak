@@ -1,0 +1,66 @@
+/* A Dear ImGui panel over a cleared background.
+ *
+ *   oak examples/imgui.oak
+ *
+ * Widgets that edit a value take the current one and return the new one, so
+ * the state round-trips through the Desc's scratch arrays: read it out, hand
+ * it to the widget, write back what comes out.
+ */
+import { Desc, Event, desc, run } from sokol;
+import sokol.gfx as gfx;
+import sokol.imgui as ui;
+
+fn init(mut d : Desc) {
+  gfx.setup(gfx.desc());
+  ui.setup(ui.desc());
+  /* numbers: [0] red, [1] green, [2] blue, [3] click count */
+  d.numbers = [ 0.15, 0.2, 0.3, 0 ];
+  d.flags = [ true ];
+}
+
+fn frame(mut d : Desc) {
+  ui.new_frame();
+
+  if ui.begin('controls') {
+    ui.text('drag to change the clear colour');
+    ui.separator();
+    d.numbers[0] = ui.slider_float('red', d.numbers[0], 0.0, 1.0);
+    d.numbers[1] = ui.slider_float('green', d.numbers[1], 0.0, 1.0);
+    d.numbers[2] = ui.slider_float('blue', d.numbers[2], 0.0, 1.0);
+    ui.separator();
+    d.flags[0] = ui.checkbox('show counter', d.flags[0]);
+    if d.flags[0] {
+      if ui.button('click me') {
+        d.numbers[3] = d.numbers[3] + 1;
+      }
+      ui.same_line();
+      ui.value('clicks', d.numbers[3]);
+    }
+  }
+  ui.end();
+
+  gfx.begin_pass(gfx.clear_action(
+      gfx.color(d.numbers[0], d.numbers[1], d.numbers[2], 1.0)));
+  ui.render();
+  gfx.end_pass();
+  gfx.commit();
+}
+
+fn event(mut d : Desc, e : Event) {
+  ui.handle_event(e);
+}
+
+fn cleanup(mut d : Desc) {
+  ui.shutdown();
+  gfx.shutdown();
+}
+
+let d = desc();
+d.title = 'sokol-oak: imgui';
+d.width = 800;
+d.height = 600;
+d.init = init;
+d.frame = frame;
+d.event = event;
+d.cleanup = cleanup;
+run(d);

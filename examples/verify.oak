@@ -1,0 +1,61 @@
+/* Loads every module in the package and touches each descriptor constructor.
+ *
+ * This opens no window, so it runs on a headless CI machine -- but importing
+ * the modules is already the check that matters: Oak refuses to load a native
+ * package whose .oak stubs and native bindings disagree, so a function that
+ * lost its binding, an enum whose variants drifted, or a renamed type all
+ * fail here rather than in someone's application.
+ */
+import { Desc, desc, Event, EventType, Key, MouseButton, Modifier } from sokol;
+import sokol.gfx as gfx;
+import sokol.time as time;
+import sokol.imgui as ui;
+
+let d = desc();
+d.title = 'verify';
+d.width = 320;
+
+let bd = gfx.buffer_desc();
+bd.float_data = [ 0.0, 1.0 ];
+bd.usage.index_buffer = false;
+
+let id = gfx.image_desc();
+id.width = 2;
+id.pixel_format = gfx.PixelFormat.RGBA8;
+
+let smp = gfx.sampler_desc();
+smp.min_filter = gfx.Filter.Linear;
+
+let sd = gfx.shader_desc();
+sd.attrs = [ 'position' ];
+sd.uniform_blocks = [ gfx.uniform_block_desc() ];
+sd.views = [ gfx.texture_view_desc() ];
+sd.samplers = [ gfx.shader_sampler_desc() ];
+sd.texture_sampler_pairs = [ gfx.texture_sampler_pair(0, 0, 'tex') ];
+
+let pd = gfx.pipeline_desc();
+pd.cull_mode = gfx.CullMode.Back;
+pd.index_type = gfx.IndexType.UInt16;
+pd.layout.buffers = [ gfx.vertex_buffer_layout() ];
+pd.layout.attrs = [ gfx.vertex_attr(gfx.VertexFormat.Float3) ];
+pd.depth = gfx.depth_state();
+pd.colors = [ gfx.color_target_state() ];
+
+let vd = gfx.view_desc();
+let b = gfx.bindings();
+let act = gfx.clear_action(gfx.color(0.1, 0.2, 0.3, 1.0));
+let blend = gfx.alpha_blend_state();
+
+print('modules loaded and every constructor ran');
+print(EventType.KeyDown);
+print(Key.Escape);
+print(MouseButton.Left);
+print(Modifier.Shift);
+print(gfx.PixelFormat.RGBA8);
+print(gfx.Backend.GLCore);
+print(ui.Cond.Once);
+print(ui.available());
+print(blend.enabled);
+print(act.colors[0].clear_value.b);
+print(pd.cull_mode == gfx.CullMode.Back);
+print('ok');
