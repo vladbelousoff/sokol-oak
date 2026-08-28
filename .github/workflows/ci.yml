@@ -6,7 +6,10 @@ name: ci
 
 on:
   push:
+    # Tags need naming here too: a `branches` filter on its own excludes tag
+    # pushes, so without this the release job below could never run.
     branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -36,6 +39,12 @@ jobs:
 
       - name: Install meson and ninja
         run: pip install meson ninja
+
+      # The Windows image ships no pkg-config, and pkg-config is how the plugin
+      # finds the Oak it just installed. The other two images have one.
+      - name: Install pkg-config
+        if: runner.os == 'Windows'
+        run: choco install --no-progress -y pkgconfiglite
 
       # meson locates the linker by searching PATH, and the bash shell the
       # build steps run in puts Git for Windows' coreutils first -- which ship
@@ -82,7 +91,14 @@ jobs:
       - name: Verify stubs against bindings
         shell: bash
         run: |
-          export PATH="$RUNNER_TEMP/oak-prefix/bin:$PATH"
+          # RUNNER_TEMP is a Windows path on Windows, and bash splits PATH on
+          # ':' -- which would tear the drive letter off the front of it.
+          if [ "$RUNNER_OS" = Windows ]; then
+            prefix=$(cygpath -u "$RUNNER_TEMP")/oak-prefix
+          else
+            prefix=$RUNNER_TEMP/oak-prefix
+          fi
+          export PATH="$prefix/bin:$PATH"
           cd examples
           oak verify.oak
 
