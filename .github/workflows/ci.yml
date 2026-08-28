@@ -6,7 +6,10 @@ name: ci
 
 on:
   push:
+    # Tags need naming here too: a `branches` filter on its own excludes tag
+    # pushes, so without this the release job below could never run.
     branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -20,22 +23,37 @@ jobs:
         include:
           - name: linux-x86_64
             os: ubuntu-latest
-          - name: macos-aarch64
-            os: macos-latest
           - name: windows-x86_64
             os: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
       - name: Install meson and ninja
         run: pip install meson ninja
+
+      # The Windows image ships no pkg-config, and pkg-config is how the plugin
+      # finds the Oak it just installed. The other two images have one.
+      - name: Install pkg-config
+        if: runner.os == 'Windows'
+        run: choco install --no-progress -y pkgconfiglite
+
+      # meson locates the linker by searching PATH, and the bash shell the
+      # build steps run in puts Git for Windows' coreutils first -- which ship
+      # a `link.exe` that is not a linker and that meson refuses to build with.
+      # `--vsenv` makes meson run vcvars itself and prepend the MSVC toolchain,
+      # so MSVC's link.exe wins. Meson skips that activation when cl.exe is
+      # already on PATH, which is why nothing puts it there beforehand.
+      - name: Let meson activate the MSVC environment
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'VSENV=--vsenv' >> "$GITHUB_ENV"
 
       # sokol_app's X11 backend, plus the GL and ALSA headers it links
       # against even when sokol_audio is not compiled in.
@@ -47,24 +65,21 @@ jobs:
             libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev \
             libxrandr-dev libasound2-dev
 
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-
       - name: Build and install Oak
         shell: bash
         run: |
           git clone --depth 1 https://github.com/vladbelousoff/oak.git "$RUNNER_TEMP/oak"
           cd "$RUNNER_TEMP/oak"
-          meson setup build --buildtype=release --prefix="$RUNNER_TEMP/oak-prefix"
+          meson setup build $VSENV --buildtype=release --prefix="$RUNNER_TEMP/oak-prefix"
           meson compile -C build
           meson install -C build
 
       - name: Build the plugin
         shell: bash
         run: |
-          meson setup build \
+          meson setup build $VSENV \
             --buildtype=release --strip \
-            -Dpkg_config_path="$RUNNER_TEMP/oak-prefix/lib/pkgconfig:$RUNNER_TEMP/oak-prefix/lib/x86_64-linux-gnu/pkgconfig"
+            -Dpkg_config_path="$RUNNER_TEMP/oak-prefix/lib/pkgconfig,$RUNNER_TEMP/oak-prefix/lib/x86_64-linux-gnu/pkgconfig"
           meson compile -C build
           meson install -C build
 
@@ -74,7 +89,14 @@ jobs:
       - name: Verify stubs against bindings
         shell: bash
         run: |
-          export PATH="$RUNNER_TEMP/oak-prefix/bin:$PATH"
+          # RUNNER_TEMP is a Windows path on Windows, and bash splits PATH on
+          # ':' -- which would tear the drive letter off the front of it.
+          if [ "$RUNNER_OS" = Windows ]; then
+            prefix=$(cygpath -u "$RUNNER_TEMP")/oak-prefix
+          else
+            prefix=$RUNNER_TEMP/oak-prefix
+          fi
+          export PATH="$prefix/bin:$PATH"
           cd examples
           oak verify.oak
 
@@ -95,7 +117,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/download-artifact@v4
         with:
