@@ -23,8 +23,6 @@ jobs:
         include:
           - name: linux-x86_64
             os: ubuntu-latest
-          - name: macos-aarch64
-            os: macos-latest
           - name: windows-x86_64
             os: windows-latest
 
